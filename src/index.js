@@ -7,6 +7,7 @@ const { startScheduler, stopScheduler } = require('./services/scheduler');
 const healthRouter = require('./routes/health');
 const reportsRouter = require('./routes/reports');
 const escalationsRouter = require('./routes/escalations');
+const queueRouter = require('./routes/queue');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -19,6 +20,7 @@ app.use(express.json());
 app.use('/health', healthRouter);
 app.use('/reports', reportsRouter);
 app.use('/escalations', escalationsRouter);
+app.use('/queue', queueRouter);
 
 // Start server
 const server = app.listen(PORT, async () => {

@@ -5,6 +5,9 @@ const { supabase } = require('./supabase');
 const { executeSql } = require('../tools/execute-sql');
 const { updateMemory } = require('../tools/update-memory');
 const { createEscalation } = require('../tools/create-escalation');
+const { queueTask } = require('../tools/queue-task');
+const { readQueue } = require('../tools/read-queue');
+const { completeQueueItem } = require('../tools/complete-queue-item');
 
 // Only initialize Anthropic client if not in test environment
 let anthropic;
@@ -93,6 +96,31 @@ async function executeTool(toolName, toolInput) {
         toolInput.description,
         toolInput.severity,
         toolInput.source_task
+      );
+
+    case 'queue_task':
+      return await queueTask(
+        toolInput.request_summary,
+        toolInput.full_context,
+        toolInput.required_tools,
+        toolInput.priority,
+        toolInput.target_mode
+      );
+
+    case 'read_queue':
+      return await readQueue(
+        toolInput.status,
+        toolInput.target_mode,
+        toolInput.limit
+      );
+
+    case 'complete_queue_item':
+      return await completeQueueItem(
+        toolInput.queue_id,
+        toolInput.status,
+        toolInput.result_summary,
+        toolInput.result_detail,
+        toolInput.error_message
       );
 
     default:
