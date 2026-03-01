@@ -1,4 +1,5 @@
 const { supabase } = require('../services/supabase');
+const { notifyEscalation } = require('../services/notification-dispatcher');
 
 /**
  * Create an escalation for Steven's attention.
@@ -28,6 +29,13 @@ async function createEscalation(title, description, severity, sourceTask = null)
     }
 
     console.log(`🚨 [Barry] Escalation created: [${severity.toUpperCase()}] ${title}`);
+
+    // Send notification (wrapped in try/catch to never break escalation creation)
+    try {
+      await notifyEscalation(data);
+    } catch (notifyError) {
+      console.error('🚨 [Barry] Notification failed (escalation still created):', notifyError);
+    }
 
     return {
       success: true,

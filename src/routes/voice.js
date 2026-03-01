@@ -16,6 +16,7 @@ const { createTaskConfig } = require('../tools/create-task-config');
 const { updateTaskConfig } = require('../tools/update-task-config');
 const { searchReports } = require('../tools/search-reports');
 const { writeReport } = require('../tools/write-report');
+const { updateNotificationSettings } = require('../tools/update-notification-settings');
 
 const router = express.Router();
 
@@ -149,6 +150,7 @@ router.post('/tool', validateAuth, async (req, res) => {
       update_task_config: updateTaskConfig,
       search_reports: searchReports,
       write_report: writeReport,
+      update_notification_settings: updateNotificationSettings,
       end_conversation: async (input) => ({
         success: true,
         summary: input.summary,
@@ -200,6 +202,9 @@ router.post('/tool', validateAuth, async (req, res) => {
         break;
       case 'write_report':
         result = await handler(toolInput.report_type, toolInput.summary, toolInput.content, toolInput.metadata);
+        break;
+      case 'update_notification_settings':
+        result = await handler(toolInput);
         break;
       case 'end_conversation':
         result = await handler(toolInput);

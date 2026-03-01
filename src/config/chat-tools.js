@@ -292,6 +292,40 @@ const BARRY_CHAT_TOOLS = [
       },
       required: ['report_type', 'summary', 'content']
     }
+  },
+  {
+    name: 'update_notification_settings',
+    description: 'Update Barry\'s notification settings based on Steven\'s preferences. Use this when Steven asks to change how or when he receives notifications.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        email_enabled: {
+          type: 'boolean',
+          description: 'Enable or disable all email notifications'
+        },
+        digest_enabled: {
+          type: 'boolean',
+          description: 'Enable or disable daily digest emails'
+        },
+        digest_time: {
+          type: 'string',
+          description: 'Time to send daily digest in UTC (e.g., "14:00" for 2 PM UTC)'
+        },
+        immediate_severities: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of severities that trigger immediate emails (e.g., ["critical", "high"])'
+        },
+        quiet_hours_start: {
+          type: 'string',
+          description: 'Start of quiet hours in UTC (e.g., "04:00" for 4 AM UTC). During quiet hours, immediate notifications become digest.'
+        },
+        quiet_hours_end: {
+          type: 'string',
+          description: 'End of quiet hours in UTC (e.g., "13:00" for 1 PM UTC)'
+        }
+      }
+    }
   }
 ];
 

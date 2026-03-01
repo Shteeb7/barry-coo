@@ -10,6 +10,7 @@ const escalationsRouter = require('./routes/escalations');
 const queueRouter = require('./routes/queue');
 const chatRouter = require('./routes/chat');
 const voiceRouter = require('./routes/voice');
+const notificationRouter = require('./routes/notifications');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -28,6 +29,7 @@ app.use('/escalations', escalationsRouter);
 app.use('/queue', queueRouter);
 app.use('/chat', chatRouter);
 app.use('/chat/voice', voiceRouter);
+app.use('/notifications', notificationRouter);
 
 // Start server
 const server = app.listen(PORT, async () => {

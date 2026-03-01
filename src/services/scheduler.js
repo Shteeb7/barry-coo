@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const { supabase } = require('./supabase');
 const { callBarry } = require('./brain');
+const { notifyReport, notifyTaskFailure, sendDailyDigest } = require('./notification-dispatcher');
 
 // Map of active cron jobs: taskName -> cron job instance
 const activeCronJobs = new Map();
@@ -54,6 +55,34 @@ async function executeTask(taskConfig) {
   const { task_name, prompt_template, model, max_retries, consecutive_failures } = taskConfig;
 
   console.log(`📋 [Scheduler] Executing task: ${task_name}`);
+
+  // Special handling for daily digest email task
+  if (task_name === 'daily_digest_email') {
+    try {
+      await sendDailyDigest();
+      await supabase
+        .from('barry_task_configs')
+        .update({
+          last_run_at: new Date().toISOString(),
+          last_run_status: 'success',
+          updated_at: new Date().toISOString()
+        })
+        .eq('task_name', task_name);
+      return;
+    } catch (error) {
+      console.error(`📧 [Scheduler] Daily digest failed:`, error);
+      await supabase
+        .from('barry_task_configs')
+        .update({
+          last_run_at: new Date().toISOString(),
+          last_run_status: 'error',
+          last_error: error.message,
+          updated_at: new Date().toISOString()
+        })
+        .eq('task_name', task_name);
+      return;
+    }
+  }
 
   // Check if task has hit max retries
   if (consecutive_failures >= max_retries) {
@@ -111,7 +140,7 @@ async function executeTask(taskConfig) {
     }
 
     // Write report to database
-    const { error: reportError } = await supabase
+    const { data: reportData, error: reportError } = await supabase
       .from('barry_reports')
       .insert({
         task_name,
@@ -123,13 +152,22 @@ async function executeTask(taskConfig) {
         tokens_out: result.tokensOut,
         cost_estimate: result.cost,
         acknowledged: false
-      });
+      })
+      .select()
+      .single();
 
     if (reportError) {
       throw new Error(`Failed to write report: ${reportError.message}`);
     }
 
     console.log(`📋 [Scheduler] Task ${task_name} completed successfully. Severity: ${severity}`);
+
+    // Send notification for the report (wrapped to never break core operation)
+    try {
+      await notifyReport(reportData);
+    } catch (notifyError) {
+      console.error('📋 [Scheduler] Notification failed (report still saved):', notifyError);
+    }
 
     // Update task config: success
     await supabase
@@ -159,6 +197,13 @@ async function executeTask(taskConfig) {
         updated_at: new Date().toISOString()
       })
       .eq('task_name', task_name);
+
+    // Send task failure notification (wrapped to never break error handling)
+    try {
+      await notifyTaskFailure(task_name, error, newFailureCount, max_retries);
+    } catch (notifyError) {
+      console.error('📋 [Scheduler] Notification failed (task error still logged):', notifyError);
+    }
 
     // If hit max retries, disable task and create critical escalation
     if (newFailureCount >= max_retries) {
