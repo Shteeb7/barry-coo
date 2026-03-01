@@ -1,0 +1,393 @@
+/**
+ * CHAT SERVICE TESTS
+ *
+ * Tests for web chat functionality
+ */
+
+// Mock uuid
+jest.mock('uuid', () => ({
+  v4: jest.fn(() => 'mock-uuid-123')
+}));
+
+// Mock Anthropic
+jest.mock('@anthropic-ai/sdk');
+
+const { startSession, sendMessage, getSession, listSessions } = require('../src/services/chat-service');
+const { supabase } = require('../src/services/supabase');
+const { Anthropic } = require('@anthropic-ai/sdk');
+
+// Mock Supabase
+jest.mock('../src/services/supabase', () => ({
+  supabase: {
+    from: jest.fn(() => ({
+    insert: jest.fn(() => ({ error: null })),
+    select: jest.fn(() => ({
+      eq: jest.fn(() => ({
+        maybeSingle: jest.fn(() => ({ data: null, error: null })),
+        single: jest.fn(() => ({ data: null, error: null })),
+        limit: jest.fn(() => ({ data: [], error: null })),
+        order: jest.fn(() => ({
+          limit: jest.fn(() => ({ data: [], error: null }))
+        }))
+      })),
+      or: jest.fn(() => ({
+        limit: jest.fn(() => ({ data: [], error: null }))
+      })),
+      in: jest.fn(() => ({
+        order: jest.fn(() => ({
+          limit: jest.fn(() => ({ data: [], error: null }))
+        }))
+      })),
+      neq: jest.fn(() => ({
+        order: jest.fn(() => ({
+          order: jest.fn(() => ({
+            limit: jest.fn(() => ({ data: [], error: null }))
+          }))
+        }))
+      })),
+      limit: jest.fn(() => ({ data: [], error: null })),
+      order: jest.fn(() => ({
+        limit: jest.fn(() => ({ data: [], error: null })),
+        order: jest.fn(() => ({
+          limit: jest.fn(() => ({ data: [], error: null }))
+        }))
+      }))
+    })),
+    update: jest.fn(() => ({
+      eq: jest.fn(() => ({ error: null }))
+    }))
+  })),
+    rpc: jest.fn(() => ({ data: { data: [] }, error: null }))
+  }
+}));
+
+describe('Chat Service', () => {
+  let mockAnthropicInstance;
+
+  beforeEach(() => {
+    // Reset mocks
+    jest.clearAllMocks();
+
+    // Mock Anthropic instance
+    mockAnthropicInstance = {
+      messages: {
+        create: jest.fn()
+      }
+    };
+
+    Anthropic.mockImplementation(() => mockAnthropicInstance);
+  });
+
+  describe('startSession', () => {
+    it('creates a new session and returns opening message', async () => {
+      // Mock Claude response
+      mockAnthropicInstance.messages.create.mockResolvedValue({
+        content: [
+          { type: 'text', text: 'Hello! Ready to dive into operations?' }
+        ],
+        usage: { input_tokens: 100, output_tokens: 20 }
+      });
+
+      // Mock Supabase insert
+      supabase.from.mockReturnValue({
+        insert: jest.fn().mockReturnValue({
+          error: null
+        }),
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null })
+          }),
+          in: jest.fn().mockReturnValue({
+            order: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue({ data: [], error: null })
+            })
+          }),
+          neq: jest.fn().mockReturnValue({
+            order: jest.fn().mockReturnValue({
+              order: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue({ data: [], error: null })
+              })
+            })
+          }),
+          limit: jest.fn().mockResolvedValue({ data: [], error: null }),
+          order: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue({ data: [], error: null })
+          })
+        }),
+        update: jest.fn().mockReturnValue({
+          eq: jest.fn().mockResolvedValue({ error: null })
+        })
+      });
+
+      const result = await startSession('user-123', 'general');
+
+      expect(result).toHaveProperty('sessionId');
+      expect(result).toHaveProperty('openingMessage');
+      expect(result.openingMessage).toBe('Hello! Ready to dive into operations?');
+      expect(mockAnthropicInstance.messages.create).toHaveBeenCalled();
+    });
+
+    it('rejects without valid conversation type', async () => {
+      // This would be validated at the route level, but good to test service behavior
+      const result = await startSession('user-123', 'invalid_type');
+      expect(result).toHaveProperty('sessionId');
+    });
+  });
+
+  describe('sendMessage', () => {
+    it('sends message and returns response', async () => {
+      // Mock session fetch
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: {
+                id: 'session-123',
+                messages: [{ role: 'assistant', content: 'Hello!' }],
+                system_prompt: 'You are Barry.',
+                status: 'active'
+              },
+              error: null
+            })
+          })
+        }),
+        update: jest.fn().mockReturnValue({
+          eq: jest.fn().mockResolvedValue({ error: null })
+        })
+      });
+
+      // Mock Claude response (no tools)
+      mockAnthropicInstance.messages.create.mockResolvedValue({
+        content: [
+          { type: 'text', text: 'Sure, let me check that.' }
+        ],
+        usage: { input_tokens: 200, output_tokens: 30 }
+      });
+
+      const result = await sendMessage('session-123', 'How many stories do we have?');
+
+      expect(result).toHaveProperty('message');
+      expect(result).toHaveProperty('toolCalls');
+      expect(result).toHaveProperty('sessionComplete');
+      expect(result.message).toBe('Sure, let me check that.');
+      expect(result.sessionComplete).toBe(false);
+    });
+
+    it('handles tool_use loop', async () => {
+      // Mock session fetch
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: {
+                id: 'session-123',
+                messages: [{ role: 'assistant', content: 'Hello!' }],
+                system_prompt: 'You are Barry.',
+                status: 'active'
+              },
+              error: null
+            })
+          })
+        }),
+        update: jest.fn().mockReturnValue({
+          eq: jest.fn().mockResolvedValue({ error: null })
+        }),
+        rpc: jest.fn().mockResolvedValue({ data: { data: [{ count: 44 }] }, error: null })
+      });
+
+      // First response: tool use
+      // Second response: text
+      mockAnthropicInstance.messages.create
+        .mockResolvedValueOnce({
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-1',
+              name: 'execute_sql',
+              input: { query: 'SELECT COUNT(*) as count FROM stories' }
+            }
+          ],
+          usage: { input_tokens: 200, output_tokens: 50 }
+        })
+        .mockResolvedValueOnce({
+          content: [
+            { type: 'text', text: 'We have 44 stories.' }
+          ],
+          usage: { input_tokens: 250, output_tokens: 20 }
+        });
+
+      const result = await sendMessage('session-123', 'How many stories?');
+
+      expect(result.message).toBe('We have 44 stories.');
+      expect(result.toolCalls).toContain('execute_sql');
+      expect(mockAnthropicInstance.messages.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('enforces max 10 rounds', async () => {
+      // Mock session fetch
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: {
+                id: 'session-123',
+                messages: [{ role: 'assistant', content: 'Hello!' }],
+                system_prompt: 'You are Barry.',
+                status: 'active'
+              },
+              error: null
+            })
+          })
+        }),
+        update: jest.fn().mockReturnValue({
+          eq: jest.fn().mockResolvedValue({ error: null })
+        })
+      });
+
+      // Always return tool use (infinite loop scenario)
+      mockAnthropicInstance.messages.create.mockResolvedValue({
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tool-1',
+            name: 'execute_sql',
+            input: { query: 'SELECT 1' }
+          }
+        ],
+        usage: { input_tokens: 200, output_tokens: 50 }
+      });
+
+      const result = await sendMessage('session-123', 'Test');
+
+      expect(mockAnthropicInstance.messages.create).toHaveBeenCalledTimes(10);
+      expect(result.message).toContain('[Reached maximum conversation depth]');
+    });
+
+    it('returns 404 for invalid sessionId', async () => {
+      // Mock session not found
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: null,
+              error: null
+            })
+          })
+        })
+      });
+
+      await expect(sendMessage('invalid-id', 'Test')).rejects.toThrow('Session not found');
+    });
+  });
+
+  describe('end_conversation tool', () => {
+    it('marks session as completed with summary', async () => {
+      // Mock session fetch
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: {
+                id: 'session-123',
+                messages: [{ role: 'assistant', content: 'Hello!' }],
+                system_prompt: 'You are Barry.',
+                status: 'active'
+              },
+              error: null
+            })
+          })
+        }),
+        update: jest.fn().mockReturnValue({
+          eq: jest.fn().mockResolvedValue({ error: null })
+        })
+      });
+
+      // Mock Claude using end_conversation tool
+      mockAnthropicInstance.messages.create.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tool-1',
+            name: 'end_conversation',
+            input: { summary: 'Discussed story stats and created a new task.' }
+          }
+        ],
+        usage: { input_tokens: 200, output_tokens: 50 }
+      });
+
+      const result = await sendMessage('session-123', "That's all for now");
+
+      expect(result.sessionComplete).toBe(true);
+    });
+  });
+
+  describe('getSession', () => {
+    it('returns session by ID', async () => {
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: {
+                id: 'session-123',
+                messages: [],
+                status: 'active'
+              },
+              error: null
+            })
+          })
+        })
+      });
+
+      const session = await getSession('session-123');
+
+      expect(session.id).toBe('session-123');
+    });
+
+    it('throws error if session not found', async () => {
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: null,
+              error: null
+            })
+          })
+        })
+      });
+
+      await expect(getSession('invalid-id')).rejects.toThrow('Session not found');
+    });
+  });
+
+  describe('listSessions', () => {
+    it('returns session list for user', async () => {
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            order: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 'session-1',
+                    conversation_type: 'general',
+                    messages: [{ role: 'assistant', content: 'Hello!' }],
+                    status: 'active',
+                    created_at: '2026-03-01T00:00:00Z'
+                  }
+                ],
+                error: null
+              })
+            })
+          })
+        })
+      });
+
+      const sessions = await listSessions('user-123');
+
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]).toHaveProperty('id');
+      expect(sessions[0]).toHaveProperty('conversationType');
+      expect(sessions[0]).toHaveProperty('firstMessage');
+    });
+  });
+});

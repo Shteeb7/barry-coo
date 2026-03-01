@@ -8,6 +8,7 @@ const healthRouter = require('./routes/health');
 const reportsRouter = require('./routes/reports');
 const escalationsRouter = require('./routes/escalations');
 const queueRouter = require('./routes/queue');
+const chatRouter = require('./routes/chat');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -16,11 +17,15 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Static files (for chat UI)
+app.use(express.static('public'));
+
 // Routes
 app.use('/health', healthRouter);
 app.use('/reports', reportsRouter);
 app.use('/escalations', escalationsRouter);
 app.use('/queue', queueRouter);
+app.use('/chat', chatRouter);
 
 // Start server
 const server = app.listen(PORT, async () => {
