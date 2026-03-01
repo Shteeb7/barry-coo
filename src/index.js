@@ -9,6 +9,7 @@ const reportsRouter = require('./routes/reports');
 const escalationsRouter = require('./routes/escalations');
 const queueRouter = require('./routes/queue');
 const chatRouter = require('./routes/chat');
+const voiceRouter = require('./routes/voice');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,6 +27,7 @@ app.use('/reports', reportsRouter);
 app.use('/escalations', escalationsRouter);
 app.use('/queue', queueRouter);
 app.use('/chat', chatRouter);
+app.use('/chat/voice', voiceRouter);
 
 // Start server
 const server = app.listen(PORT, async () => {
