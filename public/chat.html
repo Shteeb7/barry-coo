@@ -517,11 +517,12 @@
                     <label for="email">Email</label>
                     <input type="email" id="email" required autocomplete="email" value="steven.labrum@gmail.com">
                 </div>
-                <button type="submit" class="btn" id="loginButton">Send Magic Link</button>
-                <div id="loginError" class="error-message"></div>
-                <div id="loginSuccess" style="color: var(--accent-green); margin-top: 12px; display: none;">
-                    ✓ Check your email for the sign-in link!
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required autocomplete="current-password">
                 </div>
+                <button type="submit" class="btn" id="loginButton">Sign In</button>
+                <div id="loginError" class="error-message"></div>
             </form>
         </div>
     </div>
@@ -639,7 +640,7 @@
             }
         })();
 
-        // Listen for auth state changes (catches magic link redirects)
+        // Listen for auth state changes
         supabaseClient.auth.onAuthStateChange((event, session) => {
             if (event === 'SIGNED_IN' && session) {
                 accessToken = session.access_token;
@@ -651,29 +652,27 @@
             }
         });
 
-        // Magic link login handler
+        // Email/password login handler
         const loginForm = document.getElementById('loginForm');
-        const loginSuccess = document.getElementById('loginSuccess');
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             loginError.textContent = '';
-            loginSuccess.style.display = 'none';
 
             const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
 
-            const { error } = await supabaseClient.auth.signInWithOtp({
+            const { data, error } = await supabaseClient.auth.signInWithPassword({
                 email,
-                options: {
-                    emailRedirectTo: window.location.origin + '/chat.html'
-                }
+                password
             });
 
             if (error) {
                 loginError.textContent = error.message;
-            } else {
-                loginSuccess.style.display = 'block';
-                loginError.textContent = '';
+                return;
             }
+
+            accessToken = data.session.access_token;
+            showChat();
         });
 
         // Logout handler
