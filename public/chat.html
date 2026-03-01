@@ -592,7 +592,7 @@
         const SUPABASE_URL = 'https://hszuuvkfgdfqgtaycojz.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzenV1dmtmZ2RmcWd0YXljb2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg2NzY2OTQsImV4cCI6MjA1NDI1MjY5NH0.F8lw2I8ViA7IGFQE7t9YW_bGYsxcZbnlLmDW-h23Zhg';
 
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         let currentSessionId = null;
         let accessToken = null;
@@ -631,7 +631,7 @@
 
         // Check for existing session on load
         (async function checkSession() {
-            const { data: { session } } = await supabase.auth.getSession();
+            const { data: { session } } = await supabaseClient.auth.getSession();
             if (session) {
                 accessToken = session.access_token;
                 showChat();
@@ -639,7 +639,7 @@
         })();
 
         // Listen for auth state changes (catches OAuth redirects)
-        supabase.auth.onAuthStateChange((event, session) => {
+        supabaseClient.auth.onAuthStateChange((event, session) => {
             if (event === 'SIGNED_IN' && session) {
                 accessToken = session.access_token;
                 showChat();
@@ -655,7 +655,7 @@
         googleLoginButton.addEventListener('click', async () => {
             loginError.textContent = '';
 
-            const { data, error } = await supabase.auth.signInWithOAuth({
+            const { data, error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
                     redirectTo: window.location.origin + '/chat.html'
@@ -669,7 +669,7 @@
 
         // Logout handler
         logoutButton.addEventListener('click', async () => {
-            await supabase.auth.signOut();
+            await supabaseClient.auth.signOut();
             accessToken = null;
             currentSessionId = null;
             chatMessages.innerHTML = '';
@@ -1215,7 +1215,7 @@
 
         // Start first chat automatically
         (async function() {
-            const { data: { session } } = await supabase.auth.getSession();
+            const { data: { session } } = await supabaseClient.auth.getSession();
             if (session) {
                 // Wait a bit for UI to render
                 setTimeout(() => {
