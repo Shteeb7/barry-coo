@@ -381,6 +381,105 @@
             cursor: not-allowed;
         }
 
+        /* Voice Mode Styles */
+        .mode-selector {
+            display: none;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .mode-selector.active {
+            display: flex;
+        }
+
+        .btn-mode {
+            flex: 1;
+            padding: 16px;
+            background: var(--bg-input);
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-mode:hover {
+            border-color: var(--accent-blue);
+            background: var(--bg-card);
+        }
+
+        .btn-mode .emoji {
+            font-size: 24px;
+        }
+
+        .voice-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            padding: 48px 24px;
+        }
+
+        .voice-container.active {
+            display: flex;
+        }
+
+        .voice-indicator {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: var(--accent-blue);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            animation: pulse 2s infinite;
+            box-shadow: 0 0 40px rgba(108, 142, 239, 0.4);
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.9; }
+        }
+
+        .voice-indicator.speaking {
+            background: var(--accent-green);
+            box-shadow: 0 0 40px rgba(74, 222, 128, 0.4);
+        }
+
+        .voice-status {
+            font-size: 18px;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .btn-end-voice {
+            padding: 12px 32px;
+            background: var(--accent-red);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn-end-voice:hover {
+            opacity: 0.9;
+        }
+
+        .chat-container.voice-active .input-wrapper {
+            display: none;
+        }
+
         /* Mobile Responsive */
         @media (max-width: 768px) {
             .chat-header {
@@ -397,6 +496,12 @@
 
             .chat-input-area {
                 padding: 12px 16px;
+            }
+
+            .voice-indicator {
+                width: 100px;
+                height: 100px;
+                font-size: 40px;
             }
         }
     </style>
@@ -457,6 +562,21 @@
                     <option value="idea_brainstorm">Brainstorm</option>
                 </select>
             </div>
+            <div class="mode-selector" id="modeSelector">
+                <button class="btn-mode" id="voiceModeButton">
+                    <span class="emoji">🎤</span>
+                    <span>Voice</span>
+                </button>
+                <button class="btn-mode" id="textModeButton">
+                    <span class="emoji">💬</span>
+                    <span>Text</span>
+                </button>
+            </div>
+            <div class="voice-container" id="voiceContainer">
+                <div class="voice-indicator" id="voiceIndicator">🎤</div>
+                <div class="voice-status" id="voiceStatus">Connecting...</div>
+                <button class="btn-end-voice" id="endVoiceButton">End Voice Chat</button>
+            </div>
             <div class="input-wrapper">
                 <textarea
                     id="messageInput"
@@ -479,6 +599,18 @@
         let currentSessionId = null;
         let accessToken = null;
 
+        // Voice session variables
+        let voiceMode = false;
+        let currentVoiceSessionId = null;
+        let peerConnection = null;
+        let dataChannel = null;
+        let micStream = null;
+        let transcriptParts = [];
+        let voiceToolResults = [];
+        let voiceStartTime = null;
+        let currentAssistantMessage = null;
+        const OPENAI_REALTIME_MODEL = 'gpt-4o-mini-realtime-preview-2024-12-17';
+
         // DOM elements
         const loginContainer = document.getElementById('loginContainer');
         const chatContainer = document.getElementById('chatContainer');
@@ -492,6 +624,13 @@
         const typingIndicator = document.getElementById('typingIndicator');
         const conversationTypeSelector = document.getElementById('conversationTypeSelector');
         const conversationType = document.getElementById('conversationType');
+        const modeSelector = document.getElementById('modeSelector');
+        const voiceModeButton = document.getElementById('voiceModeButton');
+        const textModeButton = document.getElementById('textModeButton');
+        const voiceContainer = document.getElementById('voiceContainer');
+        const voiceIndicator = document.getElementById('voiceIndicator');
+        const voiceStatus = document.getElementById('voiceStatus');
+        const endVoiceButton = document.getElementById('endVoiceButton');
 
         // Check for existing session on load
         (async function checkSession() {
@@ -549,11 +688,33 @@
         }
 
         // New chat handler
-        newChatButton.addEventListener('click', async () => {
+        newChatButton.addEventListener('click', () => {
+            // Reset state
             chatMessages.innerHTML = '';
             currentSessionId = null;
+            voiceMode = false;
+
+            // Show type selector and mode selector
             conversationTypeSelector.classList.add('active');
-            await startNewChat();
+            modeSelector.classList.add('active');
+
+            // Hide voice UI if active
+            voiceContainer.classList.remove('active');
+            chatContainer.classList.remove('voice-active');
+        });
+
+        // Mode selection handlers
+        voiceModeButton.addEventListener('click', () => {
+            startVoiceSession();
+        });
+
+        textModeButton.addEventListener('click', () => {
+            startNewChat();
+        });
+
+        // End voice button handler
+        endVoiceButton.addEventListener('click', () => {
+            endVoiceSession();
         });
 
         // Start new chat session
@@ -561,6 +722,7 @@
             const type = conversationType.value;
 
             typingIndicator.classList.add('active');
+            modeSelector.classList.remove('active');
 
             try {
                 const response = await fetch(`${BARRY_API_URL}/chat/start`, {
@@ -588,6 +750,341 @@
             } finally {
                 typingIndicator.classList.remove('active');
             }
+        }
+
+        // Start voice session
+        async function startVoiceSession() {
+            voiceMode = true;
+            voiceStartTime = Date.now();
+            transcriptParts = [];
+            voiceToolResults = [];
+
+            // Hide mode selector and show voice UI
+            modeSelector.classList.remove('active');
+            conversationTypeSelector.classList.remove('active');
+            voiceContainer.classList.add('active');
+            chatContainer.classList.add('voice-active');
+
+            voiceStatus.textContent = 'Requesting microphone access...';
+
+            try {
+                // Request microphone permission
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                voiceStatus.textContent = 'Connecting to Barry...';
+
+                // Get voice session config from server
+                const type = conversationType.value;
+                const response = await fetch(`${BARRY_API_URL}/chat/voice/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({ conversationType: type })
+                });
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to start voice session');
+                }
+
+                currentVoiceSessionId = data.sessionId;
+                const { clientSecret, systemPrompt, tools } = data;
+
+                // Create WebRTC peer connection
+                peerConnection = new RTCPeerConnection();
+
+                // Add microphone track
+                micStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, micStream);
+                });
+
+                // Handle incoming audio
+                peerConnection.ontrack = (event) => {
+                    const audioElement = new Audio();
+                    audioElement.srcObject = event.streams[0];
+                    audioElement.play();
+                };
+
+                // Create data channel for events
+                dataChannel = peerConnection.createDataChannel('oai-events');
+
+                dataChannel.onopen = () => {
+                    console.log('Data channel opened');
+                    voiceStatus.textContent = 'Listening...';
+
+                    // Configure session
+                    sendVoiceEvent({
+                        type: 'session.update',
+                        session: {
+                            modalities: ['text', 'audio'],
+                            instructions: systemPrompt,
+                            voice: 'sage',
+                            input_audio_format: 'pcm16',
+                            output_audio_format: 'pcm16',
+                            input_audio_transcription: {
+                                model: 'whisper-1'
+                            },
+                            turn_detection: {
+                                type: 'server_vad',
+                                threshold: 0.5,
+                                prefix_padding_ms: 300,
+                                silence_duration_ms: 500
+                            },
+                            tools: tools || [],
+                            tool_choice: 'auto',
+                            temperature: 0.8
+                        }
+                    });
+                };
+
+                dataChannel.onmessage = (event) => {
+                    handleVoiceEvent(JSON.parse(event.data));
+                };
+
+                dataChannel.onerror = (error) => {
+                    console.error('Data channel error:', error);
+                    voiceStatus.textContent = 'Connection error';
+                };
+
+                // Create and set local description
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+
+                // Send offer to OpenAI Realtime API
+                const realtimeResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${clientSecret}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: OPENAI_REALTIME_MODEL,
+                        voice: 'sage',
+                        modalities: ['text', 'audio']
+                    })
+                });
+
+                const realtimeData = await realtimeResponse.json();
+
+                if (realtimeData.client_secret?.value) {
+                    // Set remote description
+                    const answer = new RTCSessionDescription({
+                        type: 'answer',
+                        sdp: realtimeData.sdp
+                    });
+                    await peerConnection.setRemoteDescription(answer);
+                }
+
+            } catch (error) {
+                console.error('Error starting voice session:', error);
+
+                let errorMessage = 'Failed to start voice session.';
+                if (error.name === 'NotAllowedError') {
+                    errorMessage = 'Microphone access denied. Please allow microphone access and try again.';
+                } else if (error.message) {
+                    errorMessage = error.message;
+                }
+
+                voiceStatus.textContent = errorMessage;
+                addMessage('system', errorMessage + ' You can start a text chat instead.');
+
+                // Clean up
+                setTimeout(() => {
+                    endVoiceSession();
+                }, 3000);
+            }
+        }
+
+        // Send event to OpenAI via data channel
+        function sendVoiceEvent(event) {
+            if (dataChannel && dataChannel.readyState === 'open') {
+                dataChannel.send(JSON.stringify(event));
+            }
+        }
+
+        // Handle events from OpenAI
+        function handleVoiceEvent(event) {
+            console.log('Voice event:', event.type);
+
+            switch (event.type) {
+                case 'conversation.item.input_audio_transcription.completed':
+                    // User's speech transcribed
+                    const userText = event.transcript;
+                    transcriptParts.push({ role: 'user', text: userText });
+                    addMessage('steven', userText);
+                    break;
+
+                case 'response.audio_transcript.delta':
+                    // Barry is speaking (stream text)
+                    voiceStatus.textContent = 'Barry is speaking...';
+                    voiceIndicator.classList.add('speaking');
+
+                    if (!currentAssistantMessage) {
+                        currentAssistantMessage = '';
+                    }
+                    currentAssistantMessage += event.delta;
+                    break;
+
+                case 'response.audio_transcript.done':
+                    // Barry finished speaking
+                    voiceStatus.textContent = 'Listening...';
+                    voiceIndicator.classList.remove('speaking');
+
+                    if (currentAssistantMessage) {
+                        transcriptParts.push({ role: 'assistant', text: currentAssistantMessage });
+                        addMessage('barry', currentAssistantMessage);
+                        currentAssistantMessage = null;
+                    }
+                    break;
+
+                case 'response.function_call_arguments.done':
+                    // Barry wants to use a tool
+                    handleVoiceFunctionCall(event.name, event.arguments);
+                    break;
+
+                case 'error':
+                    console.error('OpenAI error:', event.error);
+                    voiceStatus.textContent = 'Error: ' + event.error.message;
+                    addMessage('system', 'Voice error: ' + event.error.message);
+                    break;
+
+                case 'session.created':
+                    console.log('Session created');
+                    break;
+
+                case 'session.updated':
+                    console.log('Session updated');
+                    break;
+            }
+        }
+
+        // Handle function calls during voice session
+        async function handleVoiceFunctionCall(toolName, toolInput) {
+            voiceStatus.textContent = `Barry is using ${toolName}...`;
+
+            try {
+                // Parse arguments if string
+                const parsedInput = typeof toolInput === 'string' ? JSON.parse(toolInput) : toolInput;
+
+                // Call server to execute tool
+                const response = await fetch(`${BARRY_API_URL}/chat/voice/tool`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        sessionId: currentVoiceSessionId,
+                        toolName,
+                        toolInput: parsedInput
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Tool execution failed');
+                }
+
+                // Track tool result
+                voiceToolResults.push({
+                    tool: toolName,
+                    input: parsedInput,
+                    output: data.result
+                });
+
+                // Send result back to OpenAI
+                sendVoiceEvent({
+                    type: 'conversation.item.create',
+                    item: {
+                        type: 'function_call_output',
+                        call_id: data.callId || toolName,
+                        output: JSON.stringify(data.result)
+                    }
+                });
+
+                // Request response
+                sendVoiceEvent({
+                    type: 'response.create'
+                });
+
+                voiceStatus.textContent = 'Listening...';
+
+            } catch (error) {
+                console.error('Error executing tool:', error);
+                voiceStatus.textContent = 'Tool execution failed';
+
+                // Send error back to OpenAI
+                sendVoiceEvent({
+                    type: 'conversation.item.create',
+                    item: {
+                        type: 'function_call_output',
+                        call_id: toolName,
+                        output: JSON.stringify({ error: error.message })
+                    }
+                });
+            }
+        }
+
+        // End voice session
+        async function endVoiceSession() {
+            const duration = voiceStartTime ? Math.floor((Date.now() - voiceStartTime) / 1000) : 0;
+
+            // Close WebRTC connection
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+
+            if (dataChannel) {
+                dataChannel.close();
+                dataChannel = null;
+            }
+
+            // Stop microphone
+            if (micStream) {
+                micStream.getTracks().forEach(track => track.stop());
+                micStream = null;
+            }
+
+            // Send session summary to server
+            if (currentVoiceSessionId) {
+                try {
+                    await fetch(`${BARRY_API_URL}/chat/voice/end`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${accessToken}`
+                        },
+                        body: JSON.stringify({
+                            sessionId: currentVoiceSessionId,
+                            transcript: transcriptParts,
+                            toolResults: voiceToolResults,
+                            duration
+                        })
+                    });
+                } catch (error) {
+                    console.error('Error ending voice session:', error);
+                }
+            }
+
+            // Reset UI
+            voiceMode = false;
+            currentVoiceSessionId = null;
+            transcriptParts = [];
+            voiceToolResults = [];
+            voiceStartTime = null;
+            currentAssistantMessage = null;
+
+            voiceContainer.classList.remove('active');
+            chatContainer.classList.remove('voice-active');
+            conversationTypeSelector.classList.add('active');
+            modeSelector.classList.add('active');
+
+            voiceStatus.textContent = 'Connecting...';
+            voiceIndicator.classList.remove('speaking');
         }
 
         // Send message handler

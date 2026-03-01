@@ -278,4 +278,4 @@ function stopScheduler() {
   console.log('📋 [Scheduler] All tasks stopped');
 }
 
-module.exports = { startScheduler, stopScheduler, executeTask };
+module.exports = { startScheduler, stopScheduler, executeTask, loadAndRegisterTasks };

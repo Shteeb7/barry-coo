@@ -113,3 +113,95 @@ describe('Voice Routes (structure tests)', () => {
     expect(typeof voiceRouter).toBe('function'); // Express router is a function
   });
 });
+
+describe('Task Config Tools', () => {
+  const { createTaskConfig } = require('../src/tools/create-task-config');
+  const { updateTaskConfig } = require('../src/tools/update-task-config');
+
+  test('create-task-config creates valid task with cron validation', async () => {
+    const taskName = 'test_task_' + Date.now();
+    const result = await createTaskConfig(
+      taskName,
+      'Test task description',
+      '0 13 * * *', // Valid cron: 1 PM daily
+      'Test prompt template',
+      'claude-sonnet-4-5-20250929',
+      true
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.task_name).toBe(taskName);
+    expect(result.schedule).toBe('0 13 * * *');
+  });
+
+  test('create-task-config rejects invalid cron expression', async () => {
+    const taskName = 'test_invalid_cron_' + Date.now();
+    const result = await createTaskConfig(
+      taskName,
+      'Test task',
+      'invalid cron',
+      'Test prompt',
+      'claude-sonnet-4-5-20250929',
+      true
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Invalid cron schedule');
+  });
+
+  test('create-task-config rejects invalid task name', async () => {
+    const result = await createTaskConfig(
+      'Invalid-Task-Name!',
+      'Test task',
+      '0 13 * * *',
+      'Test prompt',
+      'claude-sonnet-4-5-20250929',
+      true
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('alphanumeric');
+  });
+
+  test('update-task-config returns error for non-existent task', async () => {
+    const result = await updateTaskConfig(
+      'non_existent_task_12345',
+      '0 14 * * *', // Valid cron
+      null,
+      null,
+      null,
+      null
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found');
+  });
+
+  test('update-task-config rejects invalid cron when updating schedule', async () => {
+    // First create a valid task
+    const taskName = 'test_update_task_' + Date.now();
+    const createResult = await createTaskConfig(
+      taskName,
+      'Test task',
+      '0 13 * * *',
+      'Test prompt',
+      'claude-sonnet-4-5-20250929',
+      true
+    );
+
+    expect(createResult.success).toBe(true);
+
+    // Try to update with invalid cron
+    const updateResult = await updateTaskConfig(
+      taskName,
+      'invalid cron expression',
+      null,
+      null,
+      null,
+      null
+    );
+
+    expect(updateResult.success).toBe(false);
+    expect(updateResult.error).toContain('Invalid cron schedule');
+  });
+});
