@@ -1156,25 +1156,15 @@
                 }
 
                 addMessage('barry', data.message, data.toolCalls);
-
-                // Re-enable input (unless session ended)
-                if (data.sessionComplete) {
-                    addMessage('system', 'Conversation ended. Start a new chat to continue.');
-                    messageInput.disabled = true;
-                    sendButton.disabled = true;
-                } else {
-                    messageInput.disabled = false;
-                    sendButton.disabled = false;
-                    messageInput.focus();
-                }
             } catch (error) {
                 console.error('Error sending message:', error);
                 addMessage('system', 'Failed to send message. Please try again.');
-                // Re-enable on error
+            } finally {
+                // Always re-enable input after each message
+                typingIndicator.classList.remove('active');
                 messageInput.disabled = false;
                 sendButton.disabled = false;
-            } finally {
-                typingIndicator.classList.remove('active');
+                messageInput.focus();
             }
         }
 
