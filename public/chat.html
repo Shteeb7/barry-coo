@@ -1157,21 +1157,24 @@
 
                 addMessage('barry', data.message, data.toolCalls);
 
+                // Re-enable input (unless session ended)
                 if (data.sessionComplete) {
                     addMessage('system', 'Conversation ended. Start a new chat to continue.');
                     messageInput.disabled = true;
                     sendButton.disabled = true;
-                }
-            } catch (error) {
-                console.error('Error sending message:', error);
-                addMessage('system', 'Failed to send message. Please try again.');
-            } finally {
-                typingIndicator.classList.remove('active');
-                if (!messageInput.disabled) {
+                } else {
                     messageInput.disabled = false;
                     sendButton.disabled = false;
                     messageInput.focus();
                 }
+            } catch (error) {
+                console.error('Error sending message:', error);
+                addMessage('system', 'Failed to send message. Please try again.');
+                // Re-enable on error
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+            } finally {
+                typingIndicator.classList.remove('active');
             }
         }
 
