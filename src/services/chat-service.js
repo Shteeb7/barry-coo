@@ -21,9 +21,11 @@ const { readQueue } = require('../tools/read-queue');
 const { completeQueueItem } = require('../tools/complete-queue-item');
 
 // Initialize Anthropic client
-const anthropic = process.env.NODE_ENV !== 'test'
-  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  : null;
+if (!process.env.ANTHROPIC_API_KEY) {
+  throw new Error('Missing ANTHROPIC_API_KEY environment variable');
+}
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const MODEL = 'claude-sonnet-4-5-20250929';
 const MAX_ROUNDS = 10; // Prevent infinite loops

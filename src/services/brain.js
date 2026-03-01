@@ -9,16 +9,14 @@ const { queueTask } = require('../tools/queue-task');
 const { readQueue } = require('../tools/read-queue');
 const { completeQueueItem } = require('../tools/complete-queue-item');
 
-// Only initialize Anthropic client if not in test environment
-let anthropic;
-if (process.env.NODE_ENV !== 'test') {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('Missing ANTHROPIC_API_KEY environment variable');
-  }
-  anthropic = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY
-  });
+// Initialize Anthropic client
+if (!process.env.ANTHROPIC_API_KEY) {
+  throw new Error('Missing ANTHROPIC_API_KEY environment variable');
 }
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY
+});
 
 // Pricing constants (per million tokens)
 const PRICING = {

@@ -1,5 +1,6 @@
 module.exports = {
   testEnvironment: 'node',
-  transform: {},
-  transformIgnorePatterns: []
+  setupFiles: ['<rootDir>/tests/setup.js'],
+  transformIgnorePatterns: [],
+  testTimeout: 30000
 };
